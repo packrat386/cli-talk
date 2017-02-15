@@ -1,0 +1,145 @@
+What's in a CLI?
+ARGV by any other other name...
+15 Feb 2017
+
+Aidan Coyle
+Supporting Services
+acoyle@enova.com
+
+* So I Have This Script
+
+I sometimes find myself in the position of wanting to make a tool out of a script.
+
+  # Posts a comment on an issue
+  # `ruby reactor.rb`
+  require 'octokit'
+
+  issue_url = "https://github.com/packrat386/Test-Repo/issues/1"
+  token = '3e9502aa625bb913ebc13d11c9f71572e2fd5367'
+
+  client = Octokit::Client.new(access_token: token)
+
+  repo = Octokit::Repository.from_url(issue_url)
+  client.add_comment(repo, issue_url.split('/').last, ":+1:")
+  puts "Comment created!"
+
+But I find I don't like many of the existing tools or frameworks in ruby
+
+* CLI Design
+
+What do we want out of this?
+
+- Something with a manageable code base
+- Something we can install/port easily
+- Something that handles arguments gracefully
+- Something that can be configured for long term use
+
+* Let's Make a Gem
+
+Bundler will actually set up a pretty decent structure for a fresh gem.
+
+  #!/usr/bin/env ruby
+
+  require 'reactor'
+
+  issue_url = ARGV.pop
+  token = ARGV.pop
+
+  Reactor::Client.new(token: token).react(issue_url: issue_url)
+  puts 'Comment created!'
+
+We can make this as an executable file in "exe/reactor" and installing the gem will install it in our $PATH somewhere.
+
+  reactor <token> <issue_url>
+
+* Don't Forget the Implementation
+
+The real logic of our code is moved into lib
+
+ module Reactor
+   class Client
+     def initialize(token:)
+       @octokit = Octokit::Client.new(access_token: token)
+     end
+ 
+     def react(issue_url:, comment: ':+1:')
+       repo = Octokit::Repository.from_url(issue_url)
+       @octokit.add_comment(repo, issue_url.split('/').last, comment)
+     end
+   end
+ end
+
+Now our code is starting to feel like a "real" project.
+
+* But Can We Do Better?
+
+We accomplished
+
+- A portable tool
+- With manageable code
+
+But we'd still like
+
+- Better argument handling
+- Configuration for args that are unlikely to change
+
+* Configuration Can Be Simple
+
+Just pick something that most people know how to use.
+
+ def initialize(config:)
+   token = YAML.safe_load(File.read(config))['token']
+   @octokit = Octokit::Client.new(access_token: token)
+ end
+
+Easily reads
+
+  token: '3e9502aa625bb913ebc13d11c9f71572e2fd5367'
+
+Which can default to somewhere sane like ~/.reactor.yml
+
+* OptionParser Is Your Friend
+
+The standard library has a tool for gracefully parsing ARGV
+
+ require 'optparse'
+ 
+ OptionParser.new do |opts|
+   opts.banner = 'Usage: reactor ISSUE_URL [options]'
+ 
+   opts.on('-c', '--config PATH', 'Path to config, defaults to ~/.reactor.yml') do |c|
+     config = c
+   end
+  
+   opts.on('-m', '--message MESSAGE', 'Path to message, defaults to ":+1:"') do |m|
+     message = m
+   end
+ 
+   opts.on('-h', '--help', 'Show this message') do
+     puts opts
+     exit
+   end
+ end.parse!
+ 
+ issue_url = ARGV.pop
+
+* The Final Product
+
+A configurable gem with a simple, elegant interface
+ 
+ [fg-386] reactor > cat ~/.reactor.yml
+ token: '3e9502aa625bb913ebc13d11c9f71572e2fd5367'
+ [fg-386] reactor > reactor -h
+ Usage: reactor ISSUE_URL [options]
+     -c, --config PATH                Path to config, defaults to ~/reactor.yml
+     -m, --message MESSAGE            Path to message, defaults to ":+1:"
+     -h, --help                       Show this message
+ [fg-386] reactor > reactor https://github.com/packrat386/Test-Repo/issues/1 -m ":trophy:"
+ Comment created!
+
+That actually [[https://github.com/packrat386/Test-Repo/issues/1][works]]!
+
+* References
+
+- [[https://github.com/packrat386/reactor][reactor code]]
+- [[https://ruby-doc.org/stdlib-2.3.0/libdoc/optparse/rdoc/OptionParser.html][OptionParser docs]]
